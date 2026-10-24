@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#090909"><title>VidLoader — Video Downloader</title>
+<meta name="theme-color" content="#090909"><title>VidLoader | Video Downloader</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='24' fill='%23ef233c'/%3E%3Cpath d='M40 25L70 50 40 75Z' fill='white'/%3E%3Cpath d='M50 52v25m-10-10 10 10 10-10' fill='none' stroke='white' stroke-width='7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <style>
 :root{--bg:#f7f7f8;--panel:#fff;--text:#171719;--muted:#73737c;--line:#e7e7eb;--red:#ed233c;--red2:#c8142b;--soft:#fff0f2;--shadow:0 18px 55px #1616160d}
@@ -22,10 +22,129 @@
 <section id="about" class="wrap section"><div class="sectionhead"><h2>How it works</h2><p>Three simple steps to get started.</p></div><div class="steps"><article class="step"><div class="num">01</div><h3>Copy a link</h3><p>Copy a video URL that you own or are permitted to download.</p></article><article class="step"><div class="num">02</div><h3>Paste it</h3><p>Paste the URL into VidLoader and request the video details.</p></article><article class="step"><div class="num">03</div><h3>Choose an option</h3><p>Use an available download option when the backend supports it.</p></article></div></section></main>
 <footer><div class="wrap foot"><strong>VidLoader</strong><span>Use responsibly and respect creators’ rights and platform terms.</span><span>© <span id="year"></span> VidLoader</span></div></footer>
 <script>
-const $=id=>document.getElementById(id);$('year').textContent=new Date().getFullYear();
-$('theme').addEventListener('click',()=>{const dark=document.documentElement.dataset.theme!=='dark';document.documentElement.dataset.theme=dark?'dark':'light';$('themeIcon').innerHTML=dark?'<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42"/>':'<path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z"/>'});
-function validYouTube(url){try{const u=new URL(url);return ['youtube.com','www.youtube.com','m.youtube.com','youtu.be','www.youtube-nocookie.com'].includes(u.hostname)&&(/youtu\.be/.test(u.hostname)||u.pathname==='/watch'||u.pathname.startsWith('/shorts/')||u.pathname.startsWith('/embed/'));}catch{return false}}
-$('fetchBtn').addEventListener('click',loadVideo);$('videoUrl').addEventListener('keydown',e=>{if(e.key==='Enter')loadVideo()});
-async function loadVideo(){const url=$('videoUrl').value.trim(),btn=$('fetchBtn'),box=$('result');box.classList.add('show');$('status').className='status';$('status').textContent='';$('formats').innerHTML='';if(!validYouTube(url)){$('status').className='status error';$('status').textContent='Please enter a valid YouTube video URL.';return}btn.disabled=true;btn.textContent='Checking…';$('vtitle').textContent='Loading video details…';$('vmeta').textContent='';$('thumb').src='';try{const r=await fetch('/api/video-info?url='+encodeURIComponent(url));const d=await r.json();if(!r.ok)throw new Error(d.error||'Could not fetch video information.');$('vtitle').textContent=d.title||'Video';$('vmeta').textContent=[d.author,d.duration].filter(Boolean).join(' · ');$('thumb').src=d.thumbnail||'';for(const f of (d.formats||[])){const b=document.createElement('button');b.className='format';b.textContent=f.label;b.addEventListener('click',()=>download(url,f.itag,b));$('formats').appendChild(b)}$('status').textContent=d.formats?.length?'Choose a format to continue.':'Video info loaded, but no downloadable formats were returned.'}catch(e){$('vtitle').textContent='Unable to load video';$('status').className='status error';$('status').textContent=e.message+' Configure the server API before deployment.'}finally{btn.disabled=false;btn.innerHTML='Get video <span aria-hidden="true">→</span>'}}
+
+const input = document.querySelector("#url");
+const button = document.querySelector("#go");
+const status = document.querySelector("#status");
+
+function showMessage(message, isError = true) {
+  status.replaceChildren();
+
+  const box = document.createElement("div");
+  box.className = isError ? "notice error" : "notice good";
+  box.textContent = message;
+
+  status.appendChild(box);
+}
+
+button.addEventListener("click", async () => {
+  const url = input.value.trim();
+
+  if (!url) {
+    showMessage("Paste a Wikimedia Commons video URL first.");
+    return;
+  }
+
+  let parsed;
+
+  try {
+    parsed = new URL(url);
+  } catch {
+    showMessage("Please enter a valid URL.");
+    return;
+  }
+
+  if (
+    parsed.hostname !== "commons.wikimedia.org" ||
+    !parsed.pathname.startsWith("/wiki/File:")
+  ) {
+    showMessage(
+      "Only Wikimedia Commons file pages are supported."
+    );
+    return;
+  }
+
+  button.disabled = true;
+  button.textContent = "Checking...";
+  status.replaceChildren();
+
+  try {
+    const response = await fetch(
+      "/api/video-info?url=" + encodeURIComponent(parsed.href)
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || "Could not load video information.");
+    }
+
+    if (!data.downloadUrl) {
+      throw new Error("No original video file was returned.");
+    }
+
+    const card = document.createElement("div");
+    card.className = "result";
+
+    const thumbnail = document.createElement("img");
+    thumbnail.className = "thumb";
+    thumbnail.alt = "Video preview";
+    thumbnail.src = data.thumbnail || "";
+    card.appendChild(thumbnail);
+
+    const details = document.createElement("div");
+
+    const title = document.createElement("h2");
+    title.className = "rtitle";
+    title.textContent = data.title || "Wikimedia video";
+    details.appendChild(title);
+
+    const metadata = document.createElement("p");
+    metadata.className = "meta";
+    metadata.textContent =
+      `${data.mimeType || "Video"} · ${data.size || "Unknown size"}`;
+    details.appendChild(metadata);
+
+    const download = document.createElement("a");
+    download.className = "download";
+    download.href = data.downloadUrl;
+    download.target = "_blank";
+    download.rel = "noopener noreferrer";
+    download.textContent = "Open / download original ↗";
+    details.appendChild(download);
+
+    const license = document.createElement("p");
+    license.className = "license";
+    license.textContent =
+      `License: ${data.license || "Check source page"}`;
+    details.appendChild(license);
+
+    const attribution = document.createElement("p");
+    attribution.className = "license";
+    attribution.textContent =
+      `Attribution: ${data.attribution || "See source page"}`;
+    details.appendChild(attribution);
+
+    const source = document.createElement("a");
+    source.href = data.pageUrl;
+    source.target = "_blank";
+    source.rel = "noopener noreferrer";
+    source.textContent = "Review original file and license";
+    details.appendChild(source);
+
+    card.appendChild(details);
+    status.replaceChildren(card);
+  } catch (error) {
+    showMessage(error.message || "Something went wrong.");
+  } finally {
+    button.disabled = false;
+    button.textContent = "Find video ↗";
+  }
+});
+
+input.addEventListener("keydown", event => {
+  if (event.key === "Enter") button.click();
+});
+
 async function download(url,itag,button){button.disabled=true;const old=button.textContent;button.textContent='Preparing…';$('status').textContent='Requesting download…';try{const r=await fetch('/api/download?url='+encodeURIComponent(url)+'&itag='+encodeURIComponent(itag));if(!r.ok){const d=await r.json().catch(()=>({}));throw new Error(d.error||'Download endpoint unavailable.')}const blob=await r.blob(),a=document.createElement('a'),obj=URL.createObjectURL(blob);a.href=obj;a.download='VidLoader-video.mp4';document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(obj);$('status').textContent='Download started.'}catch(e){$('status').className='status error';$('status').textContent=e.message}finally{button.disabled=false;button.textContent=old}}
 </script></body></html>
